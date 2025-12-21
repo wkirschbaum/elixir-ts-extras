@@ -158,9 +158,14 @@ Return a cons cell (TYPE . LINE) where TYPE is one of:
           tasks)))))
 
 (defun elixir-ts-extras--read-mix-command ()
-  "Read a mix command with completion."
-  (completing-read "Mix: " (elixir-ts-extras--get-mix-tasks)
-                   nil nil nil 'elixir-ts-extras-mix-history))
+  "Read a mix command with completion.
+First prompts for a task with completion, then allows adding arguments."
+  (let* ((task (completing-read "Mix task: " (elixir-ts-extras--get-mix-tasks)
+                                nil nil nil 'elixir-ts-extras-mix-history))
+         (args (read-string (format "mix %s " task))))
+    (if (string-empty-p args)
+        task
+      (concat task " " args))))
 
 ;;; Mix Command Running
 
