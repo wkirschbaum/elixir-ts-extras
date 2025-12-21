@@ -2,6 +2,10 @@
 
 Extra utilities for Elixir development with `elixir-ts-mode`.
 
+> **Note**: This package is experimental. The API may change without notice.
+
+This package is designed exclusively for `elixir-ts-mode` and requires Emacs 30.1+ with tree-sitter support. It does not work with the legacy `elixir-mode`.
+
 ## Features
 
 - **Smart test running** with context detection (test/describe/file)
@@ -11,16 +15,46 @@ Extra utilities for Elixir development with `elixir-ts-mode`.
 
 ## Requirements
 
-- Emacs 30.1+
+- Emacs 30.1+ compiled with tree-sitter support
 - `elixir-ts-mode` (built-in to Emacs 30.1)
+- `transient` (built-in to Emacs 29+)
+- Elixir tree-sitter grammar installed
 
 ## Installation
 
-### From source
+### Using straight.el
+
+```elisp
+(straight-use-package
+ '(elixir-ts-extras :type git :host github :repo "wkirschbaum/elixir-ts-extras"))
+```
+
+### Using elpaca
 
 ```elisp
 (use-package elixir-ts-extras
-  :load-path "/path/to/elixir-ts-extras"
+  :elpaca (:host github :repo "wkirschbaum/elixir-ts-extras"))
+```
+
+### Using package-vc (Emacs 29+)
+
+```elisp
+(package-vc-install "https://github.com/wkirschbaum/elixir-ts-extras")
+```
+
+### From source
+
+Clone the repository and add to your load path:
+
+```elisp
+(add-to-list 'load-path "/path/to/elixir-ts-extras")
+(require 'elixir-ts-extras)
+```
+
+## Configuration
+
+```elisp
+(use-package elixir-ts-extras
   :after elixir-ts-mode
   :bind (:map elixir-ts-mode-map
               ("C-c , t" . elixir-ts-extras-test-menu)
