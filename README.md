@@ -22,40 +22,12 @@ This package is designed exclusively for `elixir-ts-mode` and requires Emacs 30.
 
 ## Installation
 
-### Using straight.el
-
-```elisp
-(straight-use-package
- '(elixir-ts-extras :type git :host github :repo "wkirschbaum/elixir-ts-extras"))
-```
-
-### Using elpaca
-
 ```elisp
 (use-package elixir-ts-extras
-  :elpaca (:host github :repo "wkirschbaum/elixir-ts-extras"))
-```
-
-### Using package-vc (Emacs 29+)
-
-```elisp
-(package-vc-install "https://github.com/wkirschbaum/elixir-ts-extras")
-```
-
-### From source
-
-Clone the repository and add to your load path:
-
-```elisp
-(add-to-list 'load-path "/path/to/elixir-ts-extras")
-(require 'elixir-ts-extras)
-```
-
-## Configuration
-
-```elisp
-(use-package elixir-ts-extras
+  :vc (:url "https://github.com/wkirschbaum/elixir-ts-extras")
   :after elixir-ts-mode
+  :custom
+  (elixir-ts-extras-compilation-scroll-output t)
   :bind (:map elixir-ts-mode-map
               ("C-c , t" . elixir-ts-extras-test-menu)
               ("C-c , s" . elixir-ts-extras-test)
@@ -97,16 +69,6 @@ The mix menu (`elixir-ts-extras-mix-menu`) provides shortcuts for common mix com
 - `e` - `mix ecto.reset`
 - `x` - Run any mix command with completion
 - `E` - Set `MIX_ENV`
-
-## Customization
-
-```elisp
-;; Scroll compilation output (default: t)
-(setq elixir-ts-extras-compilation-scroll-output t)
-
-;; Default MIX_ENV for mix commands (default: nil)
-(setq elixir-ts-extras-mix-env "dev")
-```
 
 ## License
 

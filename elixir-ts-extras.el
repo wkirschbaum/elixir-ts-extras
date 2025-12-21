@@ -59,14 +59,11 @@
   :type 'boolean
   :group 'elixir-ts-extras)
 
-(defcustom elixir-ts-extras-mix-env nil
-  "MIX_ENV value to use for mix run commands.
-When nil, no MIX_ENV is set (uses mix default)."
-  :type '(choice (const :tag "Default (no override)" nil)
-                 (string :tag "Environment name"))
-  :group 'elixir-ts-extras)
-
 ;;; Internal Variables
+
+(defvar elixir-ts-extras--mix-env nil
+  "MIX_ENV value to use for mix run commands.
+When nil, no MIX_ENV is set (uses mix default).")
 
 (defvar elixir-ts-extras--compile-buffer-name nil
   "Display name for current compilation buffer.")
@@ -133,14 +130,14 @@ Return a cons cell (TYPE . LINE) where TYPE is one of:
   (interactive
    (list (completing-read
           (format "MIX_ENV%s: "
-                  (if elixir-ts-extras-mix-env
-                      (format " (current: %s)" elixir-ts-extras-mix-env)
+                  (if elixir-ts-extras--mix-env
+                      (format " (current: %s)" elixir-ts-extras--mix-env)
                     ""))
           '("dev" "test" "prod") nil nil)))
-  (setq elixir-ts-extras-mix-env (if (string-empty-p env) nil env))
+  (setq elixir-ts-extras--mix-env (if (string-empty-p env) nil env))
   (message "Mix MIX_ENV %s"
-           (if elixir-ts-extras-mix-env
-               (format "set to '%s'" elixir-ts-extras-mix-env)
+           (if elixir-ts-extras--mix-env
+               (format "set to '%s'" elixir-ts-extras--mix-env)
              "cleared")))
 
 ;;; Mix Task Completion
@@ -168,10 +165,10 @@ Return a cons cell (TYPE . LINE) where TYPE is one of:
 ;;; Mix Command Running
 
 (defun elixir-ts-extras--run-mix (command)
-  "Run mix COMMAND using `elixir-ts-extras-mix-env'."
+  "Run mix COMMAND using `elixir-ts-extras--mix-env'."
   (let* ((default-directory (project-root (project-current t)))
-         (full-command (if elixir-ts-extras-mix-env
-                           (format "MIX_ENV=%s mix %s" elixir-ts-extras-mix-env command)
+         (full-command (if elixir-ts-extras--mix-env
+                           (format "MIX_ENV=%s mix %s" elixir-ts-extras--mix-env command)
                          (concat "mix " command)))
          (elixir-ts-extras--compile-buffer-name (car (split-string command)))
          (compilation-buffer-name-function #'elixir-ts-extras--compilation-buffer-name))
@@ -197,8 +194,8 @@ Return a cons cell (TYPE . LINE) where TYPE is one of:
    ["Settings"
     ("E" elixir-ts-extras-set-mix-env
      :description (lambda ()
-                    (if elixir-ts-extras-mix-env
-                        (format "MIX_ENV: %s" elixir-ts-extras-mix-env)
+                    (if elixir-ts-extras--mix-env
+                        (format "MIX_ENV: %s" elixir-ts-extras--mix-env)
                       "MIX_ENV"))
      :transient t)]])
 
