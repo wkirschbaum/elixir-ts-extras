@@ -1,0 +1,13 @@
+# Claude Code
+CLAUDE.md
+
+# Byte-compiled Elisp
+*.elc
+
+# Emacs backup and auto-save
+*~
+\#*\#
+.\#*
+
+# Package archives
+*.tar
