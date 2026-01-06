@@ -295,11 +295,31 @@ Detects context to determine the appropriate help target:
 
 ;;; Test File Navigation
 
+(defun elixir-ts-extras--test-file-p (file)
+  "Return non-nil if FILE is a test file."
+  (and file (string-match-p "^test/.*_test\\.exs$" file)))
+
 (defun elixir-ts-extras--test-file-for (file)
   "Return the test file path for FILE.
 Converts lib/foo/bar.ex to test/foo/bar_test.exs."
   (when (and file (string-match "^lib/\\(.+\\)\\.ex$" file))
     (format "test/%s_test.exs" (match-string 1 file))))
+
+(defun elixir-ts-extras--resolve-test-file (file-relative)
+  "Resolve FILE-RELATIVE to a test file path.
+If FILE-RELATIVE is already a test file, return it.
+If it's a source file, return the corresponding test file.
+Signal `user-error' if no test file can be determined or doesn't exist."
+  (let* ((project-root (project-root (project-current t)))
+         (test-file (if (elixir-ts-extras--test-file-p file-relative)
+                        file-relative
+                      (elixir-ts-extras--test-file-for file-relative))))
+    (cond
+     ((null test-file)
+      (user-error "No test file found for %s" (or file-relative "current buffer")))
+     ((not (file-exists-p (expand-file-name test-file project-root)))
+      (user-error "Test file %s does not exist" test-file))
+     (t test-file))))
 
 (defun elixir-ts-extras--source-file-for (file)
   "Return the source file path for test FILE.
@@ -377,31 +397,40 @@ With prefix ARG, ignore transient flags."
 Inside a test block: run that single test.
 Inside a describe block (not in test): run all tests in describe.
 Outside both: run all tests in the file.
-With prefix ARG, ignore transient flags."
-  (interactive "P")
-  (elixir-ts-extras--ensure-elixir-project)
-  (let* ((context (elixir-ts-extras--test-context))
-         (context-type (car context))
-         (context-line (cdr context))
-         (default-directory (project-root (project-current t)))
-         (file-relative (when buffer-file-name
-                          (file-relative-name buffer-file-name)))
-         (command
-          (pcase context-type
-            ('test (format "test %s:%d" file-relative context-line))
-            ('describe (format "test %s:%d" file-relative context-line))
-            ('file (format "test %s" file-relative)))))
-    (elixir-ts-extras--run-test command arg)))
-
-;;;###autoload
-(defun elixir-ts-extras-test-file (arg)
-  "Run all tests in the current file.
+If not in a test file, run the corresponding test file instead.
 With prefix ARG, ignore transient flags."
   (interactive "P")
   (elixir-ts-extras--ensure-elixir-project)
   (let* ((default-directory (project-root (project-current t)))
-         (file-relative (file-relative-name buffer-file-name)))
-    (elixir-ts-extras--run-test (format "test %s" file-relative) arg)))
+         (file-relative (when buffer-file-name
+                          (file-relative-name buffer-file-name))))
+    (if (elixir-ts-extras--test-file-p file-relative)
+        ;; In a test file - use context detection
+        (let* ((context (elixir-ts-extras--test-context))
+               (context-type (car context))
+               (context-line (cdr context))
+               (command
+                (pcase context-type
+                  ('test (format "test %s:%d" file-relative context-line))
+                  ('describe (format "test %s:%d" file-relative context-line))
+                  ('file (format "test %s" file-relative)))))
+          (elixir-ts-extras--run-test command arg))
+      ;; Not in a test file - run corresponding test file
+      (let ((test-file (elixir-ts-extras--resolve-test-file file-relative)))
+        (elixir-ts-extras--run-test (format "test %s" test-file) arg)))))
+
+;;;###autoload
+(defun elixir-ts-extras-test-file (arg)
+  "Run all tests in the current file.
+If not in a test file, run the corresponding test file instead.
+With prefix ARG, ignore transient flags."
+  (interactive "P")
+  (elixir-ts-extras--ensure-elixir-project)
+  (let* ((default-directory (project-root (project-current t)))
+         (file-relative (when buffer-file-name
+                          (file-relative-name buffer-file-name)))
+         (test-file (elixir-ts-extras--resolve-test-file file-relative)))
+    (elixir-ts-extras--run-test (format "test %s" test-file) arg)))
 
 ;;;###autoload
 (defun elixir-ts-extras-test-all (arg)
