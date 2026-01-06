@@ -31,8 +31,13 @@
 ;;
 ;; * Test running with smart context detection (test/describe/file)
 ;; * Transient menus for test flags and mix commands
+;; * Mix help at point (context-aware documentation lookup)
 ;; * Custom compilation mode with ANSI color support
 ;; * Error regexp matching for ExUnit output
+;;
+;; Suggested keybindings:
+;;
+;;   (keymap-set elixir-ts-mode-map "C-c , h" #'elixir-ts-extras-mix-help-at-point)
 
 ;;; Code:
 
@@ -80,13 +85,35 @@ When nil, no MIX_ENV is set (uses mix default).")
 (defvar elixir-ts-extras-compilation--current-dep nil
   "Current dependency being compiled, used to resolve relative paths.")
 
+;;; Project Detection
+
+(defun elixir-ts-extras--elixir-project-p ()
+  "Return non-nil if current project is an Elixir project.
+Checks for mix.exs in the project root."
+  (when-let* ((project (project-current))
+              (root (project-root project)))
+    (file-exists-p (expand-file-name "mix.exs" root))))
+
+(defun elixir-ts-extras--ensure-elixir-project ()
+  "Signal an error if not in an Elixir project."
+  (unless (elixir-ts-extras--elixir-project-p)
+    (user-error "Not in an Elixir project (no mix.exs found)")))
+
 ;;; Compilation Buffer Naming
 
 (defun elixir-ts-extras--compilation-buffer-name (_mode)
   "Generate compilation buffer name from mix command."
-  (if elixir-ts-extras--compile-buffer-name
-      (format "*elixir[%s]*" elixir-ts-extras--compile-buffer-name)
-    "*elixir*"))
+  (let ((project-name (when-let* ((project (project-current))
+                                  (root (project-root project)))
+                        (file-name-nondirectory (directory-file-name root)))))
+    (cond
+     ((and project-name elixir-ts-extras--compile-buffer-name)
+      (format "*elixir[%s/%s]*" project-name elixir-ts-extras--compile-buffer-name))
+     (project-name
+      (format "*elixir[%s]*" project-name))
+     (elixir-ts-extras--compile-buffer-name
+      (format "*elixir[%s]*" elixir-ts-extras--compile-buffer-name))
+     (t "*elixir*"))))
 
 ;;; Tree-sitter Helpers
 
@@ -167,6 +194,65 @@ First prompts for a task with completion, then allows adding arguments."
         task
       (concat task " " args))))
 
+;;; Mix Help
+
+(defun elixir-ts-extras--help-target-at-point ()
+  "Get mix help target at point.
+Returns a string suitable for `mix help':
+- MODULE.FUNCTION when on a remote function call (e.g., Enum.map)
+- MODULE when on a module reference
+- app:APP when on an atom (e.g., :my_app)
+- Mix task name when on Mix.Tasks.* module"
+  (when-let* ((node (treesit-node-at (point))))
+    (let* ((node-type (treesit-node-type node))
+           (parent (treesit-node-parent node))
+           (parent-type (and parent (treesit-node-type parent))))
+      (cond
+       ;; On identifier/function name in a dot call like Enum.map
+       ((and (equal node-type "identifier")
+             (equal parent-type "dot"))
+        (let ((module (treesit-node-text
+                       (treesit-node-child-by-field-name parent "left"))))
+          (format "%s.%s" module (treesit-node-text node))))
+       ;; On module part of a dot call - get full module.function
+       ((and (equal node-type "alias")
+             (equal parent-type "dot"))
+        (treesit-node-text parent))
+       ;; On a standalone alias (module reference)
+       ((equal node-type "alias")
+        (let ((text (treesit-node-text node)))
+          ;; Convert Mix.Tasks.Foo.Bar to task name foo.bar
+          (if (string-match "^Mix\\.Tasks\\.\\(.+\\)$" text)
+              (downcase (match-string 1 text))
+            text)))
+       ;; On an atom like :my_app -> app:my_app
+       ((equal node-type "atom")
+        (let ((text (treesit-node-text node)))
+          (when (string-match "^:\\(.+\\)$" text)
+            (format "app:%s" (match-string 1 text)))))
+       ;; Fallback to text at point
+       (t (treesit-node-text node))))))
+
+(defun elixir-ts-extras--show-mix-help (task)
+  "Display mix help for TASK in a help window."
+  (let* ((default-directory (project-root (project-current t)))
+         (output (shell-command-to-string (format "mix help %s 2>&1" task))))
+    (with-help-window "*mix help*"
+      (princ output))))
+
+;;;###autoload
+(defun elixir-ts-extras-mix-help-at-point ()
+  "Show mix help for the symbol at point.
+Detects context to determine the appropriate help target:
+- On a function call (Enum.map): shows MODULE.FUNCTION help
+- On a module (Enum): shows MODULE help
+- On an atom (:my_app): shows app:APP help
+- On Mix.Tasks.*: shows task help"
+  (interactive)
+  (if-let* ((target (elixir-ts-extras--help-target-at-point)))
+      (elixir-ts-extras--show-mix-help target)
+    (user-error "No help target at point")))
+
 ;;; Mix Command Running
 
 (defun elixir-ts-extras--run-mix (command)
@@ -202,7 +288,49 @@ First prompts for a task with completion, then allows adding arguments."
                     (if elixir-ts-extras--mix-env
                         (format "MIX_ENV: %s" elixir-ts-extras--mix-env)
                       "MIX_ENV"))
-     :transient t)]])
+     :transient t)]]
+  (interactive)
+  (elixir-ts-extras--ensure-elixir-project)
+  (transient-setup 'elixir-ts-extras-mix-menu))
+
+;;; Test File Navigation
+
+(defun elixir-ts-extras--test-file-for (file)
+  "Return the test file path for FILE.
+Converts lib/foo/bar.ex to test/foo/bar_test.exs."
+  (when (and file (string-match "^lib/\\(.+\\)\\.ex$" file))
+    (format "test/%s_test.exs" (match-string 1 file))))
+
+(defun elixir-ts-extras--source-file-for (file)
+  "Return the source file path for test FILE.
+Converts test/foo/bar_test.exs to lib/foo/bar.ex."
+  (when (and file (string-match "^test/\\(.+\\)_test\\.exs$" file))
+    (format "lib/%s.ex" (match-string 1 file))))
+
+;;;###autoload
+(defun elixir-ts-extras-test-jump ()
+  "Jump between source and test file.
+If in a source file (lib/*.ex), jump to its test file (test/*_test.exs).
+If in a test file, jump to its source file.
+If the target file doesn't exist, prompt to create it."
+  (interactive)
+  (elixir-ts-extras--ensure-elixir-project)
+  (let* ((project-root (project-root (project-current t)))
+         (file-relative (when buffer-file-name
+                          (file-relative-name buffer-file-name project-root)))
+         (target-relative (or (elixir-ts-extras--test-file-for file-relative)
+                              (elixir-ts-extras--source-file-for file-relative)))
+         (target-absolute (when target-relative
+                            (expand-file-name target-relative project-root))))
+    (cond
+     ((null target-relative)
+      (user-error "Not in a lib/*.ex or test/*_test.exs file"))
+     ((file-exists-p target-absolute)
+      (find-file target-absolute))
+     ((y-or-n-p (format "Create %s? " target-relative))
+      (find-file target-absolute))
+     (t
+      (message "Aborted")))))
 
 ;;; Test Running
 
@@ -238,6 +366,7 @@ If IGNORE-FLAGS is non-nil, run without flags."
   "Rerun the last test command.
 With prefix ARG, ignore transient flags."
   (interactive "P")
+  (elixir-ts-extras--ensure-elixir-project)
   (if elixir-ts-extras--last-test-command
       (elixir-ts-extras--run-test elixir-ts-extras--last-test-command arg)
     (user-error "No previous test command to rerun")))
@@ -250,6 +379,7 @@ Inside a describe block (not in test): run all tests in describe.
 Outside both: run all tests in the file.
 With prefix ARG, ignore transient flags."
   (interactive "P")
+  (elixir-ts-extras--ensure-elixir-project)
   (let* ((context (elixir-ts-extras--test-context))
          (context-type (car context))
          (context-line (cdr context))
@@ -268,6 +398,7 @@ With prefix ARG, ignore transient flags."
   "Run all tests in the current file.
 With prefix ARG, ignore transient flags."
   (interactive "P")
+  (elixir-ts-extras--ensure-elixir-project)
   (let* ((default-directory (project-root (project-current t)))
          (file-relative (file-relative-name buffer-file-name)))
     (elixir-ts-extras--run-test (format "test %s" file-relative) arg)))
@@ -277,6 +408,7 @@ With prefix ARG, ignore transient flags."
   "Run all tests in the project.
 With prefix ARG, ignore transient flags."
   (interactive "P")
+  (elixir-ts-extras--ensure-elixir-project)
   (elixir-ts-extras--run-test "test" arg))
 
 ;;;###autoload
@@ -284,10 +416,12 @@ With prefix ARG, ignore transient flags."
   "Stop the currently running test.
 Sends interrupt signal followed by \\='a\\=' to abort the Erlang break menu."
   (interactive)
-  (when-let* ((buf (get-buffer "*elixir[test]*"))
-              (proc (get-buffer-process buf)))
-    (interrupt-process proc)
-    (process-send-string proc "a\n")))
+  (elixir-ts-extras--ensure-elixir-project)
+  (let ((elixir-ts-extras--compile-buffer-name "test"))
+    (when-let* ((buf (get-buffer (elixir-ts-extras--compilation-buffer-name nil)))
+                (proc (get-buffer-process buf)))
+      (interrupt-process proc)
+      (process-send-string proc "a\n"))))
 
 ;;; Test Menu
 
@@ -317,6 +451,7 @@ Sends interrupt signal followed by \\='a\\=' to abort the Erlang break menu."
    ("C-x C-s" "Save flags as default" transient-save)
    ("C-x C-r" "Reset to saved" transient-reset)]
   (interactive)
+  (elixir-ts-extras--ensure-elixir-project)
   (transient-setup 'elixir-ts-extras-test-menu nil nil
                    :value (transient-get-value)))
 
