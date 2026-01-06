@@ -454,6 +454,36 @@ Sends interrupt signal followed by \\='a\\=' to abort the Erlang break menu."
 
 ;;; Test Menu
 
+(transient-define-suffix elixir-ts-extras--test-at-point-suffix (arg)
+  "Run test at point, persisting current flags."
+  :description "at point"
+  (interactive "P")
+  (transient-set)
+  (elixir-ts-extras-test arg))
+
+(transient-define-suffix elixir-ts-extras--test-file-suffix (arg)
+  "Run tests in current file, persisting current flags."
+  :description "current file"
+  (interactive "P")
+  (transient-set)
+  (elixir-ts-extras-test-file arg))
+
+(transient-define-suffix elixir-ts-extras--test-all-suffix (arg)
+  "Run all tests, persisting current flags."
+  :description "all project"
+  (interactive "P")
+  (transient-set)
+  (elixir-ts-extras-test-all arg))
+
+(transient-define-suffix elixir-ts-extras--test-rerun-suffix (arg)
+  "Rerun last test, persisting current flags."
+  :description (lambda ()
+                 (format "rerun: %s" elixir-ts-extras--last-test-command))
+  :if (lambda () elixir-ts-extras--last-test-command)
+  (interactive "P")
+  (transient-set)
+  (elixir-ts-extras-test-rerun arg))
+
 ;;;###autoload (autoload 'elixir-ts-extras-test-menu "elixir-ts-extras" nil t)
 (transient-define-prefix elixir-ts-extras-test-menu ()
   "Transient menu for Elixir test commands."
@@ -468,21 +498,17 @@ Sends interrupt signal followed by \\='a\\=' to abort the Erlang break menu."
    ("-r" "Repeat until failure" "--repeat-until-failure=" :reader transient-read-number-N+)
    ("-S" "Seed" "--seed=" :reader transient-read-number-N0)]
   ["Run Tests (C-u to ignore flags)"
-   ("s" "at point" elixir-ts-extras-test)
-   ("v" "current file" elixir-ts-extras-test-file)
-   ("a" "all project" elixir-ts-extras-test-all)
-   ("r" elixir-ts-extras-test-rerun
-    :description (lambda ()
-                   (format "rerun: %s" elixir-ts-extras--last-test-command))
-    :if (lambda () elixir-ts-extras--last-test-command))
+   ("s" elixir-ts-extras--test-at-point-suffix)
+   ("v" elixir-ts-extras--test-file-suffix)
+   ("a" elixir-ts-extras--test-all-suffix)
+   ("r" elixir-ts-extras--test-rerun-suffix)
    ("k" "stop test" elixir-ts-extras-test-stop)]
   ["Settings"
-   ("C-x C-s" "Save flags as default" transient-save)
+   ("C-x C-s" "Save flags permanently" transient-save)
    ("C-x C-r" "Reset to saved" transient-reset)]
   (interactive)
   (elixir-ts-extras--ensure-elixir-project)
-  (transient-setup 'elixir-ts-extras-test-menu nil nil
-                   :value (transient-get-value)))
+  (transient-setup 'elixir-ts-extras-test-menu))
 
 ;;; Compilation Mode
 
